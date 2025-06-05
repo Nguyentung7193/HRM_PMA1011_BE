@@ -53,3 +53,4 @@ temp/
 # Nếu dùng dotenv-safe (nếu có)
 .env.example
 config/*.json
+config/*.json
