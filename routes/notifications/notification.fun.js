@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../../models/auth/User');
-const admin = require('../../utils/firebase');
+const notificationController = require('../../controller/notification/notification.controller');
 const authenticate = require('../../middleware/authenticate');
+const User = require('../../models/auth/User');
+const Notification = require('../../models/notifications/Notificaton');
+const admin = require('../../utils/firebase');
 
 
 /**
@@ -24,12 +26,14 @@ const authenticate = require('../../middleware/authenticate');
 const sendNotificationToUser = async (userId, title, body, data = null) => {
   try {
     if (!userId || !title || !body) {
-      throw new Error('userId, title và body là bắt buộc');
+      throw new Error('Missing required parameters');
     }
+
     const user = await User.findById(userId);
     if (!user || !user.fcmToken) {
-      throw new Error('Không tìm thấy token FCM của user');
+      throw new Error('User not found or FCM token not available');
     }
+
     const message = {
       notification: { title, body },
       token: user.fcmToken,
@@ -37,13 +41,30 @@ const sendNotificationToUser = async (userId, title, body, data = null) => {
     if (data) {
       message.data = data;
     }
+
+    // Gửi notification qua Firebase
     const response = await admin.messaging().send(message);
     console.log('Notification sent successfully:', response);
+
+    // Lưu notification vào database
+    const notification = new Notification({
+      userId,
+      title,
+      body,
+      data,
+      type: data?.type || 'system',
+      fcmMessageId: response,
+      status: 'sent',
+      priority: 'normal'
+    });
+
+    await notification.save();
 
     return {
       success: true,
       response,
-      message: 'Notification sent successfully'
+      notification,
+      message: 'Notification sent and saved successfully'
     };
   } catch (error) {
     console.error('Error sending notification:', error);
@@ -75,6 +96,8 @@ const sendNotificationToMultipleUsers = async (userIds, title, body, data = null
     throw error;
   }
 };
+
+
 module.exports = {
   sendNotificationToUser,
   sendNotificationToMultipleUsers
