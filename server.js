@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const authRoutes = require('./routes/auth/auth.router');
 const notificationRouter = require('./routes/notifications/Notification.router');
 const leaveRequestRoutes = require('./routes/leave/leaveRequest.route');
-const authMiddleware = require('./middleware/authenticate'); // đảm bảo đúng path
+const authMiddleware = require('./middleware/authenticate');
 
 const app = express();
 app.use(express.json());
