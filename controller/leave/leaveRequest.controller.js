@@ -155,3 +155,131 @@ exports.getLeaveRequestDetail = async (req, res) => {
         });
     }
 };
+
+exports.deleteLeaveRequest = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+        const userId = req.user.userId;
+
+        const leaveRequest = await LeaveRequest.findById(requestId);
+
+        if (!leaveRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy yêu cầu xin nghỉ'
+            });
+        }
+
+        // Chỉ cho phép xóa nếu là người tạo yêu cầu hoặc admin
+        if (leaveRequest.employeeId.toString() !== userId && !req.user.isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Không có quyền xóa yêu cầu này'
+            });
+        }
+
+        // Chỉ cho phép xóa các yêu cầu đang ở trạng thái pending
+        if (leaveRequest.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Chỉ có thể xóa yêu cầu đang chờ duyệt'
+            });
+        }
+
+        await LeaveRequest.findByIdAndDelete(requestId);
+
+        return res.status(200).json({
+            success: true,
+            message: 'Xóa yêu cầu xin nghỉ thành công'
+        });
+
+    } catch (err) {
+        console.error('Lỗi khi xóa yêu cầu xin nghỉ:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server'
+        });
+    }
+};
+
+exports.updateLeaveRequest = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+        const userId = req.user.userId;
+        const { type, reason, startDate, endDate } = req.body;
+
+        const leaveRequest = await LeaveRequest.findById(requestId);
+
+        if (!leaveRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy yêu cầu xin nghỉ'
+            });
+        }
+
+        // Kiểm tra quyền cập nhật
+        if (leaveRequest.employeeId.toString() !== userId && !req.user.isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Không có quyền cập nhật yêu cầu này'
+            });
+        }
+
+        // Chỉ cho phép cập nhật các yêu cầu đang ở trạng thái pending
+        if (leaveRequest.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Chỉ có thể cập nhật yêu cầu đang chờ duyệt'
+            });
+        }
+
+        // Validate dữ liệu đầu vào
+        if (!type || !reason || !startDate || !endDate) {
+            return res.status(400).json({
+                success: false,
+                message: 'Thiếu thông tin bắt buộc'
+            });
+        }
+
+        const updatedRequest = await LeaveRequest.findByIdAndUpdate(
+            requestId,
+            {
+                type,
+                reason,
+                startDate,
+                endDate,
+                updatedAt: new Date()
+            },
+            { new: true }
+        ).populate('employeeId', 'email');
+
+        // Gửi thông báo cho người dùng
+        try {
+            await sendNotificationToUser(
+                userId,
+                'Yêu cầu xin nghỉ đã được cập nhật',
+                `Yêu cầu xin nghỉ từ ${startDate} đến ${endDate} đã được cập nhật thành công.`,
+                {
+                    requestId: requestId,
+                    type: 'leave_request_updated',
+                    status: 'pending'
+                }
+            );
+        } catch (notificationError) {
+            console.error('Lỗi khi gửi thông báo cập nhật:', notificationError);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cập nhật yêu cầu xin nghỉ thành công',
+            data: updatedRequest
+        });
+
+    } catch (err) {
+        console.error('Lỗi khi cập nhật yêu cầu xin nghỉ:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server'
+        });
+    }
+};
