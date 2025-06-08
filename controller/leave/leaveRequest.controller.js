@@ -118,3 +118,40 @@ exports.getLeaveRequests = async (req, res) => {
         return res.status(500).json({ message: 'Lỗi server.' });
     }
 };
+
+exports.getLeaveRequestDetail = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+
+        if (!requestId) {
+            return res.status(400).json({
+                success: false,
+                message: 'ID yêu cầu xin nghỉ không được cung cấp'
+            });
+        }
+
+        const leaveRequest = await LeaveRequest.findById(requestId)
+            .populate('employeeId', 'email')
+            .exec();
+
+        if (!leaveRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy yêu cầu xin nghỉ'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Lấy chi tiết yêu cầu xin nghỉ thành công',
+            data: leaveRequest
+        });
+
+    } catch (err) {
+        console.error('Lỗi khi lấy chi tiết yêu cầu xin nghỉ:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server'
+        });
+    }
+};
