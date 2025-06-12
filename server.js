@@ -6,6 +6,7 @@ const notificationRouter = require('./routes/notifications/Notification.router')
 const leaveRequestRoutes = require('./routes/leave/leaveRequest.route');
 const otReportRoutes = require('./routes/overtime/otReport.route');
 const authMiddleware = require('./middleware/authenticate');
+const attendanceRoutes = require('./routes/attendance/attendance.route');
 
 const app = express();
 app.use(express.json());
@@ -22,6 +23,7 @@ app.use('/api/notify', notificationRouter);
 app.use('/api/auth', authRoutes);
 app.use('/api/leave-requests', authMiddleware, leaveRequestRoutes);
 app.use('/api/ot-reports', otReportRoutes);
+app.use('/api/attendance', attendanceRoutes);
 
 
 const PORT = process.env.PORT || 5000;
