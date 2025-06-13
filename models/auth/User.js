@@ -10,7 +10,15 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  fcmToken: { type: String, default: null },
-});
+  role: {
+    type: String,
+    enum: ['admin', 'employee'], // Define allowed roles
+    default: 'employee'
+  },
+  fcmToken: {
+    type: String,
+    default: null
+  }
+}, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
