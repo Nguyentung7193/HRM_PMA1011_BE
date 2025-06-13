@@ -14,8 +14,6 @@ exports.register = async (req, res) => {
                 message: 'Email đã được sử dụng'
             });
         }
-
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
         // Create new user
