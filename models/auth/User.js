@@ -12,7 +12,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ['admin', 'employee'], // Define allowed roles
+    enum: ['admin', 'user'],
     default: 'employee'
   },
   fcmToken: {
