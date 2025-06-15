@@ -4,7 +4,7 @@ const bcrypt = require('bcrypt');
 
 exports.register = async (req, res) => {
     try {
-        const { email, password, role } = req.body;
+        const { email, password, role,fcmtoken } = req.body;
 
         // Check if user already exists
         const existingUser = await User.findOne({ email });
@@ -20,7 +20,8 @@ exports.register = async (req, res) => {
         const user = new User({
             email,
             password: hashedPassword,
-            role: role || 'user'
+            role: role || 'user',
+            fcmToken: fcmtoken
         });
 
         await user.save();
@@ -45,7 +46,7 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const { email, password,fcmToken } = req.body;
 
         // Find user
         const user = await User.findOne({ email });
@@ -70,7 +71,8 @@ exports.login = async (req, res) => {
             {
                 userId: user._id,
                 email: user.email,
-                role: user.role
+                role: user.role,
+                fcmToken: fcmToken
             },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
