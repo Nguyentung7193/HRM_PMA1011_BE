@@ -434,3 +434,134 @@ exports.getLeaveRequestDetailAdmin = async (req, res) => {
         });
     }
 };
+
+exports.approveLeaveRequest = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+        const adminId = req.user.userId;
+        const { note } = req.body; // Optional note from admin
+
+        const leaveRequest = await LeaveRequest.findById(requestId)
+            .populate('employeeId', 'email fcmToken');
+
+        if (!leaveRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy yêu cầu xin nghỉ'
+            });
+        }
+
+        if (leaveRequest.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Chỉ có thể phê duyệt yêu cầu đang chờ duyệt'
+            });
+        }
+
+        // Update request status
+        leaveRequest.status = 'approved';
+        leaveRequest.adminNote = note;
+        leaveRequest.approvedBy = adminId;
+        leaveRequest.approvedAt = new Date();
+
+        await leaveRequest.save();
+
+        // Send notification to employee
+        try {
+            await sendNotificationToUser(
+                leaveRequest.employeeId._id,
+                'Yêu cầu nghỉ phép được chấp thuận',
+                `Yêu cầu nghỉ từ ${leaveRequest.startDate.toLocaleDateString()} đến ${leaveRequest.endDate.toLocaleDateString()} đã được phê duyệt`,
+                {
+                    type: 'leave_request_approved',
+                    requestId: leaveRequest._id,
+                    note: note
+                }
+            );
+        } catch (notifyError) {
+            console.error('Lỗi gửi thông báo:', notifyError);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Phê duyệt yêu cầu xin nghỉ thành công',
+            data: leaveRequest
+        });
+
+    } catch (error) {
+        console.error('Lỗi khi phê duyệt yêu cầu:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server'
+        });
+    }
+};
+
+exports.rejectLeaveRequest = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+        const adminId = req.user.userId;
+        const { reason } = req.body; // Require reason for rejection
+
+        if (!reason) {
+            return res.status(400).json({
+                success: false,
+                message: 'Vui lòng cung cấp lý do từ chối'
+            });
+        }
+
+        const leaveRequest = await LeaveRequest.findById(requestId)
+            .populate('employeeId', 'email fcmToken');
+
+        if (!leaveRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy yêu cầu xin nghỉ'
+            });
+        }
+
+        if (leaveRequest.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Chỉ có thể từ chối yêu cầu đang chờ duyệt'
+            });
+        }
+
+        // Update request status
+        leaveRequest.status = 'rejected';
+        leaveRequest.rejectionReason = reason;
+        leaveRequest.rejectedBy = adminId;
+        leaveRequest.rejectedAt = new Date();
+
+        await leaveRequest.save();
+
+        // Send notification to employee
+        try {
+            await sendNotificationToUser(
+                leaveRequest.employeeId._id,
+                'Yêu cầu nghỉ phép bị từ chối',
+                `Yêu cầu nghỉ từ ${leaveRequest.startDate.toLocaleDateString()} đến ${leaveRequest.endDate.toLocaleDateString()} đã bị từ chối`,
+                {
+                    type: 'leave_request_rejected',
+                    requestId: leaveRequest._id,
+                    reason: reason
+                }
+            );
+        } catch (notifyError) {
+            console.error('Lỗi gửi thông báo:', notifyError);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Từ chối yêu cầu xin nghỉ thành công',
+            data: leaveRequest
+        });
+
+    } catch (error) {
+        console.error('Lỗi khi từ chối yêu cầu:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server'
+        });
+    }
+};
