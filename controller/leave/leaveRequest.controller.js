@@ -283,3 +283,154 @@ exports.updateLeaveRequest = async (req, res) => {
         });
     }
 };
+
+exports.getAllEmployeeLeaveRequests = async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 10,
+            status,
+            startDate,
+            endDate,
+            type,
+            employeeEmail
+        } = req.query;
+
+        const filter = {};
+
+        // Add filters if provided
+        if (status) filter.status = status;
+        if (type) filter.type = type;
+
+        // Date range filter
+        if (startDate || endDate) {
+            filter.startDate = {};
+            if (startDate) filter.startDate.$gte = new Date(startDate);
+            if (endDate) filter.startDate.$lte = new Date(endDate);
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        // Create aggregation pipeline
+        const aggregationPipeline = [
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'employeeId',
+                    foreignField: '_id',
+                    as: 'employee'
+                }
+            },
+            { $unwind: '$employee' }
+        ];
+
+        // Add email filter if provided
+        if (employeeEmail) {
+            aggregationPipeline.push({
+                $match: {
+                    'employee.email': { $regex: employeeEmail, $options: 'i' }
+                }
+            });
+        }
+
+        // Add other filters
+        if (Object.keys(filter).length > 0) {
+            aggregationPipeline.push({ $match: filter });
+        }
+
+        // Get total count
+        const totalDocs = await LeaveRequest.aggregate([
+            ...aggregationPipeline,
+            { $count: 'total' }
+        ]);
+
+        // Add pagination
+        aggregationPipeline.push(
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: parseInt(limit) }
+        );
+
+        // Execute query
+        const requests = await LeaveRequest.aggregate(aggregationPipeline);
+
+        const total = totalDocs[0]?.total || 0;
+
+        return res.status(200).json({
+            success: true,
+            message: 'Lấy danh sách yêu cầu xin nghỉ thành công',
+            data: {
+                requests: requests.map(request => ({
+                    ...request,
+                    employeeEmail: request.employee.email,
+                    employeeId: request.employee._id
+                })),
+                pagination: {
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(total / parseInt(limit)),
+                    totalRecords: total,
+                    limit: parseInt(limit)
+                }
+            }
+        });
+
+    } catch (err) {
+        console.error('Lỗi khi lấy danh sách yêu cầu xin nghỉ:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server'
+        });
+    }
+};
+
+exports.getLeaveRequestDetailAdmin = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+
+        if (!requestId) {
+            return res.status(400).json({
+                success: false,
+                message: 'ID yêu cầu xin nghỉ không được cung cấp'
+            });
+        }
+        const leaveRequest = await LeaveRequest.findById(requestId)
+            .populate({
+                path: 'employeeId',
+                select: 'email name role fcmToken createdAt'
+            })
+            .exec();
+
+        if (!leaveRequest) {
+            return res.status(404).json({
+                success: false,
+                message: 'Không tìm thấy yêu cầu xin nghỉ'
+            });
+        }
+        const response = {
+            success: true,
+            message: 'Lấy chi tiết yêu cầu xin nghỉ thành công',
+            data: {
+                ...leaveRequest.toObject(),
+                canApprove: leaveRequest.status === 'pending',
+                requestAge: Math.floor((Date.now() - leaveRequest.createdAt) / (1000 * 60 * 60 * 24)), // Days since creation
+                totalDays: Math.ceil((new Date(leaveRequest.endDate) - new Date(leaveRequest.startDate)) / (1000 * 60 * 60 * 24)),
+                employee: {
+                    id: leaveRequest.employeeId._id,
+                    email: leaveRequest.employeeId.email,
+                    name: leaveRequest.employeeId.name,
+                    role: leaveRequest.employeeId.role,
+                    accountCreated: leaveRequest.employeeId.createdAt
+                }
+            }
+        };
+
+        return res.status(200).json(response);
+
+    } catch (err) {
+        console.error('Lỗi khi lấy chi tiết yêu cầu xin nghỉ:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server'
+        });
+    }
+};
