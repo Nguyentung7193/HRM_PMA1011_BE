@@ -31,14 +31,18 @@ const otReportSchema = new mongoose.Schema({
         enum: ['pending', 'approved', 'rejected'],
         default: 'pending'
     },
-    project: {
-        type: String,
-        required: true
+    adminNote: String,
+    rejectionReason: String,
+    approvedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     },
-    tasks: {
-        type: String,
-        required: true
-    }
+    rejectedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+    },
+    approvedAt: Date,
+    rejectedAt: Date
 }, {
     timestamps: true
 });
