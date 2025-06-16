@@ -44,22 +44,26 @@ const { sendNotificationToUser } = require('../../routes/notifications/notificat
 exports.getCurrentWeekSchedule = async (req, res) => {
     try {
         const today = new Date();
-        const todayISO = today.toISOString().split('T')[0];
+        today.setHours(0, 0, 0, 0); // Reset time part
 
-        console.log('Searching for schedule containing date:', todayISO);
+        console.log('Debug dates:', {
+            searchDate: today,
+            searchDateISO: today.toISOString()
+        });
+
         const schedule = await WeeklySchedule.findOne({
-            $and: [
-                { weekStart: { $lte: today } },
-                { weekEnd: { $gte: today } }
-            ]
+            weekStart: { $lte: today },
+            weekEnd: { $gte: today }
         }).populate({
             path: 'days.shifts.morning.employeeId days.shifts.afternoon.employeeId',
             select: 'email name'
         });
 
+        console.log('Found schedule:', schedule);
+
         const response = {
             success: true,
-            currentDate: todayISO,
+            currentDate: today.toISOString().split('T')[0],
             data: schedule
         };
 
@@ -67,13 +71,13 @@ exports.getCurrentWeekSchedule = async (req, res) => {
             response.message = 'Không tìm thấy lịch làm việc cho tuần hiện tại';
         } else {
             response.message = 'Lấy lịch làm việc thành công';
-            // Thêm thông tin về tuần
             response.weekInfo = {
                 weekStart: schedule.weekStart,
                 weekEnd: schedule.weekEnd,
                 isCurrentWeek: true
             };
         }
+
         return res.status(200).json(response);
 
     } catch (error) {
@@ -81,12 +85,10 @@ exports.getCurrentWeekSchedule = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Lỗi server',
-            currentDate: new Date().toISOString().split('T')[0],
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };
-// Create new schedule
 exports.createSchedule = async (req, res) => {
     try {
         const { weekStart, weekEnd, days } = req.body;
@@ -271,6 +273,84 @@ exports.updateSchedule = async (req, res) => {
         return res.status(500).json({
             success: false,
             message: 'Lỗi server'
+        });
+    }
+};
+
+// Get all schedules with optional filters and pagination
+exports.getAllSchedules = async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 10,
+            startDate,
+            endDate,
+            employeeId
+        } = req.query;
+
+        // Build filter object
+        const filter = {};
+
+        // Date range filter
+        if (startDate || endDate) {
+            if (startDate) filter.weekStart = { $gte: new Date(startDate) };
+            if (endDate) filter.weekEnd = { $lte: new Date(endDate) };
+        }
+
+        // Employee filter
+        if (employeeId) {
+            filter.$or = [
+                { 'days.shifts.morning.employeeId': employeeId },
+                { 'days.shifts.afternoon.employeeId': employeeId }
+            ];
+        }
+
+        // Calculate skip for pagination
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        // Get total count
+        const total = await WeeklySchedule.countDocuments(filter);
+
+        // Get schedules with pagination
+        const schedules = await WeeklySchedule.find(filter)
+            .populate('createdBy', 'email name')
+            .populate('days.shifts.morning.employeeId days.shifts.afternoon.employeeId', 'email name')
+            .sort({ weekStart: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
+
+        return res.status(200).json({
+            success: true,
+            message: 'Lấy danh sách lịch làm việc thành công',
+            data: {
+                schedules: schedules.map(schedule => ({
+                    _id: schedule._id,
+                    weekStart: schedule.weekStart,
+                    weekEnd: schedule.weekEnd,
+                    days: schedule.days,
+                    createdBy: schedule.createdBy,
+                    createdAt: schedule.createdAt,
+                    employeeCount: schedule.days.reduce((count, day) => {
+                        return count +
+                            (day.shifts.morning?.length || 0) +
+                            (day.shifts.afternoon?.length || 0);
+                    }, 0)
+                })),
+                pagination: {
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil(total / parseInt(limit)),
+                    totalRecords: total,
+                    limit: parseInt(limit)
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Lỗi khi lấy danh sách lịch làm việc:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };

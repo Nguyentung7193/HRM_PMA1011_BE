@@ -7,5 +7,6 @@ const authenticate = require('../../middleware/authenticate');
 router.get('/current', authenticate, scheduleController.getCurrentWeekSchedule);
 router.post('/', authenticate, scheduleController.createSchedule);
 router.put('/:scheduleId', authenticate, scheduleController.updateSchedule);
+router.get('/all', authenticate, scheduleController.getAllSchedules);
 
 module.exports = router;

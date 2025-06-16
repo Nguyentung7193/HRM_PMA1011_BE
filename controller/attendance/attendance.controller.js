@@ -199,3 +199,119 @@ exports.getAttendanceHistory = async (req, res) => {
         });
     }
 };
+
+exports.getAllEmployeesAttendance = async (req, res) => {
+    try {
+        const {
+            page = 1,
+            limit = 10,
+            startDate,
+            endDate,
+            employeeEmail,
+            status
+        } = req.query;
+
+        // Build aggregation pipeline
+        const aggregationPipeline = [
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'employeeId',
+                    foreignField: '_id',
+                    as: 'employee'
+                }
+            },
+            { $unwind: '$employee' }
+        ];
+
+        // Add filters
+        const matchStage = {};
+
+        // Date range filter
+        if (startDate || endDate) {
+            matchStage.date = {};
+            if (startDate) matchStage.date.$gte = new Date(startDate);
+            if (endDate) matchStage.date.$lte = new Date(endDate);
+        }
+
+        // Status filter
+        if (status) {
+            matchStage.status = status;
+        }
+
+        // Employee email filter
+        if (employeeEmail) {
+            aggregationPipeline.push({
+                $match: {
+                    'employee.email': { $regex: employeeEmail, $options: 'i' }
+                }
+            });
+        }
+
+        if (Object.keys(matchStage).length > 0) {
+            aggregationPipeline.push({ $match: matchStage });
+        }
+
+        // Get total count
+        const totalDocs = await Attendance.aggregate([
+            ...aggregationPipeline,
+            { $count: 'total' }
+        ]);
+
+        // Add pagination and sorting
+        aggregationPipeline.push(
+            { $sort: { date: -1 } },
+            { $skip: (parseInt(page) - 1) * parseInt(limit) },
+            { $limit: parseInt(limit) }
+        );
+
+        // Execute query
+        const attendances = await Attendance.aggregate(aggregationPipeline);
+
+        // Calculate statistics
+        const statistics = {
+            totalEmployees: new Set(attendances.map(a => a.employee._id.toString())).size,
+            averageHoursPerDay: attendances.reduce((acc, curr) => acc + (curr.totalHours || 0), 0) / attendances.length || 0,
+            presentToday: await Attendance.countDocuments({
+                date: {
+                    $gte: new Date().setHours(0, 0, 0, 0),
+                    $lt: new Date().setHours(23, 59, 59, 999)
+                }
+            })
+        };
+
+        return res.status(200).json({
+            success: true,
+            message: 'Lấy danh sách chấm công thành công',
+            data: {
+                records: attendances.map(record => ({
+                    _id: record._id,
+                    date: record.date,
+                    timeLogs: record.timeLogs,
+                    totalHours: record.totalHours,
+                    status: record.status,
+                    employee: {
+                        _id: record.employee._id,
+                        email: record.employee.email,
+                        name: record.employee.name
+                    }
+                })),
+                statistics,
+                pagination: {
+                    currentPage: parseInt(page),
+                    totalPages: Math.ceil((totalDocs[0]?.total || 0) / parseInt(limit)),
+                    totalRecords: totalDocs[0]?.total || 0,
+                    limit: parseInt(limit)
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Lỗi khi lấy danh sách chấm công:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Lỗi server',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
