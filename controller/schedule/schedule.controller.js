@@ -44,7 +44,7 @@ const { sendNotificationToUser } = require('../../routes/notifications/notificat
 exports.getCurrentWeekSchedule = async (req, res) => {
     try {
         const today = new Date();
-        today.setHours(0, 0, 0, 0); // Reset time part
+        today.setHours(0, 0, 0, 0);
 
         console.log('Debug dates:', {
             searchDate: today,
@@ -54,10 +54,7 @@ exports.getCurrentWeekSchedule = async (req, res) => {
         const schedule = await WeeklySchedule.findOne({
             weekStart: { $lte: today },
             weekEnd: { $gte: today }
-        }).populate({
-            path: 'days.shifts.morning.employeeId days.shifts.afternoon.employeeId',
-            select: 'email name'
-        });
+        }).populate('createdBy', 'email name');
 
         console.log('Found schedule:', schedule);
 
@@ -100,10 +97,14 @@ exports.createSchedule = async (req, res) => {
                 message: 'Thiếu thông tin bắt buộc'
             });
         }
+
+        // Format dates
         const startDate = new Date(weekStart);
         startDate.setHours(0, 0, 0, 0);
         const endDate = new Date(weekEnd);
         endDate.setHours(0, 0, 0, 0);
+
+        // Validate week length
         const diffTime = Math.abs(endDate - startDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
@@ -114,7 +115,7 @@ exports.createSchedule = async (req, res) => {
             });
         }
 
-        // Make sure we have 7 days
+        // Validate days array
         if (days.length !== 7) {
             return res.status(400).json({
                 success: false,
@@ -122,69 +123,29 @@ exports.createSchedule = async (req, res) => {
             });
         }
 
+        // Format shifts data
+        const formattedDays = days.map(day => ({
+            date: new Date(day.date),
+            shifts: {
+                morning: Array.isArray(day.shifts?.morning) ? day.shifts.morning.map(shift => ({
+                    name: shift.name || 'Unknown',
+                    description: shift.description || ''
+                })) : [],
+                afternoon: Array.isArray(day.shifts?.afternoon) ? day.shifts.afternoon.map(shift => ({
+                    name: shift.name || 'Unknown',
+                    description: shift.description || ''
+                })) : []
+            }
+        }));
+
         const schedule = new WeeklySchedule({
             weekStart: startDate,
             weekEnd: endDate,
-            days,
+            days: formattedDays,
             createdBy
         });
 
         await schedule.save();
-
-        // Collect employee IDs from all shifts
-        const employeeIds = new Set();
-        days.forEach(day => {
-            if (day.shifts) {
-                if (day.shifts.morning) {
-                    day.shifts.morning.forEach(shift => {
-                        if (shift.employeeId) employeeIds.add(shift.employeeId);
-                    });
-                }
-                if (day.shifts.afternoon) {
-                    day.shifts.afternoon.forEach(shift => {
-                        if (shift.employeeId) employeeIds.add(shift.employeeId);
-                    });
-                }
-            }
-        });
-
-        // Send notifications only if there are employees
-        if (employeeIds.size > 0) {
-            const notificationPromises = Array.from(employeeIds).map(async employeeId => {
-                try {
-                    await sendNotificationToUser(
-                        employeeId,
-                        'Lịch làm việc mới',
-                        `Lịch làm việc tuần ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()} đã được tạo`,
-                        {
-                            type: 'schedule',
-                            action: 'created',
-                            weekStart: startDate.toISOString(),
-                            weekEnd: endDate.toISOString()
-                        }
-                    );
-                } catch (notifyError) {
-                    if (notifyError?.errorInfo?.code === 'messaging/registration-token-not-registered') {
-                        console.log(`Không tìm thấy token thông báo cho user ${employeeId}`);
-                    } else {
-                        console.error('Lỗi gửi thông báo:', notifyError);
-                    }
-                    return null;
-                }
-            });
-
-            // Process notifications asynchronously
-            Promise.allSettled(notificationPromises)
-                .then(results => {
-                    const failed = results.filter(r => r.status === 'rejected');
-                    if (failed.length > 0) {
-                        console.log(`${failed.length} thông báo không gửi được`);
-                    }
-                })
-                .catch(error => {
-                    console.error('Lỗi xử lý thông báo:', error);
-                });
-        }
 
         return res.status(201).json({
             success: true,
