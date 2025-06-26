@@ -88,19 +88,15 @@ exports.checkInOut = async (req, res) => {
                 data: attendance
             });
         } else {
-            // Add check-out to existing log
             lastLog.checkOut = now;
             const diffInMs = lastLog.checkOut - lastLog.checkIn;
             lastLog.duration = Math.round((diffInMs / (1000 * 60 * 60)) * 100) / 100;
-
-            // Update total hours
             attendance.totalHours = attendance.timeLogs.reduce(
                 (acc, log) => acc + (log.duration || 0), 0
             );
+            attendance.status = 'completed';
 
             await attendance.save();
-
-            // Send notification...
             try {
                 await sendNotificationToUser(userId, 'Chấm công thành công',
                     `Bạn đã check out lúc ${now.toLocaleTimeString()}. Thời gian ca làm việc: ${lastLog.duration} giờ`,
